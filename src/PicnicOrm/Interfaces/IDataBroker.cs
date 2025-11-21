@@ -1,4 +1,9 @@
 ﻿using System.Collections.Generic;
+using System.Threading.Tasks;
+
+using PicnicOrm.Data;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 using PicnicOrm.Data;
 using PicnicOrm.Mapping;
@@ -85,16 +90,33 @@ namespace PicnicOrm
         /// <param name="storedProcName"></param>
         /// <param name="parameters"></param>
         /// <returns></returns>
-        IEnumerable<T> ExecuteStoredProcedure<T>(string storedProcName, IList<IDbParameter> parameters = null) where T : class;
+        IEnumerable<T> ExecuteStoredProcedure<T>(string storedProcName, object parameters = null) where T : class;
 
         /// <summary>
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <param name="storedProcName"></param>
         /// <param name="parameters"></param>
-        /// <param name="configKey"></param>
         /// <returns></returns>
-        IEnumerable<T> ExecuteStoredProcedure<T>(string storedProcName, int configKey, IList<IDbParameter> parameters = null) where T : class;
+        Task<IEnumerable<T>> ExecuteStoredProcedureAsync<T>(string storedProcName, object parameters = null) where T : class;
+
+        /// <summary>
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="storedProcName"></param>
+        /// <param name="configKey"></param>
+        /// <param name="parameters"></param>
+        /// <returns></returns>
+        IEnumerable<T> ExecuteStoredProcedure<T>(string storedProcName, int configKey, object parameters = null) where T : class;
+
+        /// <summary>
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="storedProcName"></param>
+        /// <param name="configKey"></param>
+        /// <param name="parameters"></param>
+        /// <returns></returns>
+        Task<IEnumerable<T>> ExecuteStoredProcedureAsync<T>(string storedProcName, int configKey, object parameters = null) where T : class;
 
         #endregion
     }

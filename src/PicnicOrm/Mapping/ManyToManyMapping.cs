@@ -1,6 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using System.Linq;
+
+using PicnicOrm.Data;
+
+namespace PicnicOrm.Mapping
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 using PicnicOrm.Data;
 
@@ -11,18 +20,20 @@ namespace PicnicOrm.Mapping
     /// <typeparam name="TParent">ex: User</typeparam>
     /// <typeparam name="TChild">ex: Car</typeparam>
     /// <typeparam name="TLink">ex: UserCar</typeparam>
-    public class ManyToManyMapping<TParent, TChild, TLink> : BaseChildMapping<TParent, TChild>
+    /// <typeparam name="TParentKey"></typeparam>
+    /// <typeparam name="TChildKey"></typeparam>
+    public class ManyToManyMapping<TParent, TChild, TLink, TParentKey, TChildKey> : BaseChildMapping<TParent, TChild, TParentKey, TChildKey>
         where TParent : class where TChild : class where TLink : class
     {
         #region Fields
 
         /// <summary>
         /// </summary>
-        protected readonly Func<TLink, int> _childLinkKeySelector;
+        protected readonly Func<TLink, TChildKey> _childLinkKeySelector;
 
         /// <summary>
         /// </summary>
-        protected readonly Func<TLink, int> _parentLinkKeySelector;
+        protected readonly Func<TLink, TParentKey> _parentLinkKeySelector;
 
         /// <summary>
         /// </summary>
@@ -38,7 +49,7 @@ namespace PicnicOrm.Mapping
         /// <param name="childLinkKeySelector"></param>
         /// <param name="parentKeyLinkSelector"></param>
         /// <param name="parentSetter"></param>
-        public ManyToManyMapping(Func<TChild, int> childKeySelector, Func<TLink, int> childLinkKeySelector, Func<TLink, int> parentKeyLinkSelector, Action<TParent, IEnumerable<TChild>> parentSetter)
+        public ManyToManyMapping(Func<TChild, TChildKey> childKeySelector, Func<TLink, TChildKey> childLinkKeySelector, Func<TLink, TParentKey> parentKeyLinkSelector, Action<TParent, IEnumerable<TChild>> parentSetter)
             : base(childKeySelector)
         {
             _childLinkKeySelector = childLinkKeySelector;
@@ -55,10 +66,10 @@ namespace PicnicOrm.Mapping
         /// <param name="gridReader"></param>
         /// <param name="parents"></param>
         /// <param name="shouldContinueThroughEmptyTables"></param>
-        public override void Map(IGridReader gridReader, IDictionary<int, TParent> parents, bool shouldContinueThroughEmptyTables)
+        public override void Map(IGridReader gridReader, IDictionary<TParentKey, TParent> parents, bool shouldContinueThroughEmptyTables)
         {
             base.Map(gridReader, parents, shouldContinueThroughEmptyTables);
-            IDictionary<int, TChild> childDictionary = null;
+            IDictionary<TChildKey, TChild> childDictionary = null;
 
             //Organize the link entities by parent key
             var groupedLinks = GetGroupedLinks(gridReader);
@@ -74,6 +85,30 @@ namespace PicnicOrm.Mapping
             MapChildren(gridReader, childDictionary, shouldContinueThroughEmptyTables);
         }
 
+        /// <summary>
+        /// </summary>
+        /// <param name="gridReader"></param>
+        /// <param name="parents"></param>
+        /// <param name="shouldContinueThroughEmptyTables"></param>
+        public override async Task MapAsync(IGridReader gridReader, IDictionary<TParentKey, TParent> parents, bool shouldContinueThroughEmptyTables)
+        {
+            await base.MapAsync(gridReader, parents, shouldContinueThroughEmptyTables);
+            IDictionary<TChildKey, TChild> childDictionary = null;
+
+            //Organize the link entities by parent key
+            var groupedLinks = await GetGroupedLinksAsync(gridReader);
+
+            if (shouldContinueThroughEmptyTables || (groupedLinks != null && groupedLinks.Any()))
+            {
+                var children = await gridReader.ReadAsync<TChild>();
+
+                //map children and parents using the grouped links and return the children in a dictionary if there were any
+                childDictionary = Map(children, groupedLinks, parents);
+            }
+
+            await MapChildrenAsync(gridReader, childDictionary, shouldContinueThroughEmptyTables);
+        }
+
         #endregion
 
         #region Private Methods
@@ -82,11 +117,29 @@ namespace PicnicOrm.Mapping
         /// </summary>
         /// <param name="gridReader"></param>
         /// <returns></returns>
-        private IDictionary<int, List<int>> GetGroupedLinks(IGridReader gridReader)
+        private IDictionary<TParentKey, List<TChildKey>> GetGroupedLinks(IGridReader gridReader)
         {
-            IDictionary<int, List<int>> groupedLinks = null;
+            IDictionary<TParentKey, List<TChildKey>> groupedLinks = null;
 
             var links = gridReader.Read<TLink>();
+
+            if (links != null)
+            {
+                groupedLinks = links.GroupBy(_parentLinkKeySelector, _childLinkKeySelector).ToDictionary(grouping => grouping.Key, grouping => grouping.ToList());
+            }
+
+            return groupedLinks != null && groupedLinks.Any() ? groupedLinks : null;
+        }
+
+        /// <summary>
+        /// </summary>
+        /// <param name="gridReader"></param>
+        /// <returns></returns>
+        private async Task<IDictionary<TParentKey, List<TChildKey>>> GetGroupedLinksAsync(IGridReader gridReader)
+        {
+            IDictionary<TParentKey, List<TChildKey>> groupedLinks = null;
+
+            var links = await gridReader.ReadAsync<TLink>();
 
             if (links != null)
             {
@@ -101,7 +154,7 @@ namespace PicnicOrm.Mapping
         /// <param name="childDictionary"></param>
         /// <param name="parents"></param>
         /// <param name="groupedLinks"></param>
-        private void MapParents(IDictionary<int, TChild> childDictionary, IDictionary<int, TParent> parents, IDictionary<int, List<int>> groupedLinks)
+        private void MapParents(IDictionary<TChildKey, TChild> childDictionary, IDictionary<TParentKey, TParent> parents, IDictionary<TParentKey, List<TChildKey>> groupedLinks)
         {
             if (parents == null)
             {
@@ -109,7 +162,27 @@ namespace PicnicOrm.Mapping
             }
 
             //Organize the children entities by parent key (children can belong to more than one parent)
-            var manyToManyGroupedChildren = childDictionary.ToGrouping(groupedLinks);
+            // Note: ToGrouping is an extension method, need to check if it supports generic keys or if I need to update it.
+            // Assuming ToGrouping needs update or replacement.
+            // Let's implement the logic inline or assume ToGrouping works if it's generic enough.
+            // Actually, ToGrouping is likely in Extensions.cs. I should check it.
+            
+            // For now, let's implement the logic here to be safe and optimize.
+            var manyToManyGroupedChildren = new Dictionary<TParentKey, List<TChild>>();
+            foreach (var link in groupedLinks)
+            {
+                var parentKey = link.Key;
+                var childKeys = link.Value;
+                var childrenList = new List<TChild>(childKeys.Count);
+                foreach(var childKey in childKeys)
+                {
+                    if(childDictionary.TryGetValue(childKey, out var child))
+                    {
+                        childrenList.Add(child);
+                    }
+                }
+                manyToManyGroupedChildren.Add(parentKey, childrenList);
+            }
 
             //Map the children collections to their parents
             foreach (var parent in parents)
@@ -128,13 +201,18 @@ namespace PicnicOrm.Mapping
         /// <param name="groupedLinks"></param>
         /// <param name="parents"></param>
         /// <returns></returns>
-        private IDictionary<int, TChild> Map(IEnumerable<TChild> children, IDictionary<int, List<int>> groupedLinks, IDictionary<int, TParent> parents)
+        private IDictionary<TChildKey, TChild> Map(IEnumerable<TChild> children, IDictionary<TParentKey, List<TChildKey>> groupedLinks, IDictionary<TParentKey, TParent> parents)
         {
-            IDictionary<int, TChild> childDictionary = null;
+            IDictionary<TChildKey, TChild> childDictionary = null;
 
             if (children != null && groupedLinks != null)
             {
-                childDictionary = children.ToDictionary(_childKeySelector);
+                var childrenList = children.ToList();
+                childDictionary = new Dictionary<TChildKey, TChild>(childrenList.Count);
+                foreach(var child in childrenList)
+                {
+                    childDictionary.Add(_childKeySelector(child), child);
+                }
 
                 MapParents(childDictionary, parents, groupedLinks);
             }

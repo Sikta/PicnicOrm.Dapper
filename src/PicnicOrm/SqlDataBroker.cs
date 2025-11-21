@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using System.Data;
 
 using PicnicOrm.Data;
@@ -88,7 +89,7 @@ namespace PicnicOrm
             var key = typeof(T);
             if (_typeMappings.ContainsKey(key))
             {
-                throw new ArgumentException($"Type: ({key}) has already been added.");
+                throw new ArgumentException($"{nameof(key)}: ({key.Name}) has already been added.");
             }
 
             _typeMappings.Add(key, mapping);
@@ -98,10 +99,27 @@ namespace PicnicOrm
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <param name="storedProcName"></param>
+        /// <param name="parameters"></param>
+        /// <returns></returns>
+        public IEnumerable<T> ExecuteStoredProcedure<T>(string storedProcName, object parameters = null) where T : class
+        {
+            var key = typeof(T);
+            if (!_typeMappings.ContainsKey(key))
+            {
+                throw new ArgumentException($"Type: ({key.Name}) is not registered.");
+            }
+
+            return ExecuteMapping<T>(storedProcName, _typeMappings[key], parameters);
+        }
+
+        /// <summary>
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="storedProcName"></param>
         /// <param name="mappingKey"></param>
         /// <param name="parameters"></param>
         /// <returns></returns>
-        public IEnumerable<T> ExecuteStoredProcedure<T>(string storedProcName, int mappingKey, IList<IDbParameter> parameters = null) where T : class
+        public IEnumerable<T> ExecuteStoredProcedure<T>(string storedProcName, int mappingKey, object parameters = null) where T : class
         {
             if (!_parentMappings.ContainsKey(mappingKey))
             {
@@ -117,15 +135,32 @@ namespace PicnicOrm
         /// <param name="storedProcName"></param>
         /// <param name="parameters"></param>
         /// <returns></returns>
-        public IEnumerable<T> ExecuteStoredProcedure<T>(string storedProcName, IList<IDbParameter> parameters = null) where T : class
+        public Task<IEnumerable<T>> ExecuteStoredProcedureAsync<T>(string storedProcName, object parameters = null) where T : class
         {
             var key = typeof(T);
             if (!_typeMappings.ContainsKey(key))
             {
-                throw new ArgumentException($"Type: ({typeof(T)}) is not a registered Type.");
+                throw new ArgumentException($"Type: ({key.Name}) is not registered.");
             }
 
-            return ExecuteMapping<T>(storedProcName, _typeMappings[key], parameters);
+            return ExecuteMappingAsync<T>(storedProcName, _typeMappings[key], parameters);
+        }
+
+        /// <summary>
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="storedProcName"></param>
+        /// <param name="mappingKey"></param>
+        /// <param name="parameters"></param>
+        /// <returns></returns>
+        public Task<IEnumerable<T>> ExecuteStoredProcedureAsync<T>(string storedProcName, int mappingKey, object parameters = null) where T : class
+        {
+            if (!_parentMappings.ContainsKey(mappingKey))
+            {
+                throw new ArgumentException($"Parameter: ({nameof(mappingKey)}: {mappingKey}) is not a valid key.");
+            }
+
+            return ExecuteMappingAsync<T>(storedProcName, _parentMappings[mappingKey], parameters);
         }
 
         #endregion
@@ -139,63 +174,45 @@ namespace PicnicOrm
         /// <param name="mapping"></param>
         /// <param name="parameters"></param>
         /// <returns></returns>
-        private IEnumerable<T> ExecuteMapping<T>(string storedProcName, IParentMapping mapping, IList<IDbParameter> parameters = null) where T : class
+        private IEnumerable<T> ExecuteMapping<T>(string storedProcName, IParentMapping mapping, object parameters) where T : class
         {
-            IEnumerable<T> list = null;
+            IEnumerable<T> results = null;
 
-            var castedMapping = (IParentMapping<T>)mapping;
             using (var connection = _sqlConnectionFactory.Create(_connectionString))
             {
-                using (var reader = _gridReaderFactory.Create(connection, storedProcName, parameters, commandType: CommandType.StoredProcedure))
+                using (var reader = _gridReaderFactory.Create(connection, storedProcName, parameters))
                 {
-                    list = castedMapping.Read(reader);
+                    var castedMapping = (IParentMapping<T>)mapping;
+                    results = castedMapping.Read(reader);
                 }
             }
 
-            return list;
+            return results;
+        }
+
+        /// <summary>
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="storedProcName"></param>
+        /// <param name="mapping"></param>
+        /// <param name="parameters"></param>
+        /// <returns></returns>
+        private async Task<IEnumerable<T>> ExecuteMappingAsync<T>(string storedProcName, IParentMapping mapping, object parameters) where T : class
+        {
+            IEnumerable<T> results = null;
+
+            using (var connection = _sqlConnectionFactory.Create(_connectionString))
+            {
+                using (var reader = _gridReaderFactory.Create(connection, storedProcName, parameters))
+                {
+                    var castedMapping = (IParentMapping<T>)mapping;
+                    results = await castedMapping.ReadAsync(reader);
+                }
+            }
+
+            return results;
         }
 
         #endregion
-
-        //public void ExecuteStoreQuery(string sql)
-        //{
-        //    throw new NotImplementedException();
-        //}
-
-        //public IEnumerable<T> Query<T>(string sql) where T : class
-        //{
-        //    throw new NotImplementedException();
-        //}
-
-        //public IEnumerable<T> QueryGraph<T>(string sql) where T : class
-        //{
-        //    throw new NotImplementedException();
-
-        //}
-
-        //public IEnumerable<T> QueryGraph<T>(string sql, int parentMappingKey) where T : class
-        //{
-        //    throw new NotImplementedException();
-        //}
-
-        //public T QueryScalar<T>(string sql) where T : IConvertible
-        //{
-        //    throw new NotImplementedException();
-        //}
-
-        //public T QuerySingle<T>(string sql) where T : class
-        //{
-        //    throw new NotImplementedException();
-        //}
-
-        //public T QuerySingleGraph<T>(string sql) where T : class
-        //{
-        //    throw new NotImplementedException();
-        //}
-
-        //public T QuerySingleGraph<T>(string sql, int parentMappingKey) where T : class
-        //{
-        //    throw new NotImplementedException();
-        //}
     }
 }

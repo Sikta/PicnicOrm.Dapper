@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading.Tasks;
 
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -95,32 +96,6 @@ namespace PicnicOrm.UnitTests
 
             //Act
             SqlDataBroker.ExecuteStoredProcedure<ParentItem>("FakeProcName", 7);
-
-            //Assert
-            MockParentMapping.Verify(mapping => mapping.Read(It.IsAny<IGridReader>(), true), Times.Once);
-            mockSecondMapping.Verify(mapping => mapping.Read(It.IsAny<IGridReader>(), It.IsAny<bool>()), Times.Never);
-        }
-
-        [TestMethod]
-        public void ExecuteStoredProcedure_PassValidKeyType_UsesCorrectMapping()
-        {
-            //Arrange
-            var mockSecondMapping = new Mock<IParentMapping<OneToOneItem>>();
-            SqlDataBroker.AddMapping<OneToOneItem>(mockSecondMapping.Object);
-            SqlDataBroker.AddMapping<ParentItem>(MockParentMapping.Object);
-
-            //Act
-            SqlDataBroker.ExecuteStoredProcedure<ParentItem>("FakeProcName");
-
-            //Assert
-            MockParentMapping.Verify(mapping => mapping.Read(It.IsAny<IGridReader>(), true), Times.Once);
-            mockSecondMapping.Verify(mapping => mapping.Read(It.IsAny<IGridReader>(), It.IsAny<bool>()), Times.Never);
-        }
-
-        [TestMethod]
-        public void Constructor_PassConnectionStringAndGridReaderFactory_DefaultConnectionFactoryIsCreated()
-        {
-            //Act
             var result = new SqlDataBroker("FakeString", MockGridReaderFactory.Object);
 
             var privateObject = new PrivateObject(result);

@@ -1,6 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using System.Linq;
+
+using PicnicOrm.Data;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 using PicnicOrm.Data;
 
@@ -10,14 +18,16 @@ namespace PicnicOrm.Mapping
     /// </summary>
     /// <typeparam name="TParent"></typeparam>
     /// <typeparam name="TChild"></typeparam>
-    public class OneToManyMapping<TParent, TChild> : BaseChildMapping<TParent, TChild>
+    /// <typeparam name="TParentKey"></typeparam>
+    /// <typeparam name="TChildKey"></typeparam>
+    public class OneToManyMapping<TParent, TChild, TParentKey, TChildKey> : BaseChildMapping<TParent, TChild, TParentKey, TChildKey>
         where TParent : class where TChild : class
     {
         #region Fields
 
         /// <summary>
         /// </summary>
-        protected readonly Func<TChild, int> _childParentKeySelector;
+        protected readonly Func<TChild, TParentKey> _childParentKeySelector;
 
         /// <summary>
         /// </summary>
@@ -32,7 +42,7 @@ namespace PicnicOrm.Mapping
         /// <param name="childKeySelector"></param>
         /// <param name="childParentKeySelector"></param>
         /// <param name="parentSetter"></param>
-        public OneToManyMapping(Func<TChild, int> childKeySelector, Func<TChild, int> childParentKeySelector, Action<TParent, IEnumerable<TChild>> parentSetter)
+        public OneToManyMapping(Func<TChild, TChildKey> childKeySelector, Func<TChild, TParentKey> childParentKeySelector, Action<TParent, IEnumerable<TChild>> parentSetter)
             : base(childKeySelector)
         {
             _childParentKeySelector = childParentKeySelector;
@@ -48,22 +58,57 @@ namespace PicnicOrm.Mapping
         /// <param name="gridReader"></param>
         /// <param name="parents"></param>
         /// <param name="shouldContinueThroughEmptyTables"></param>
-        public override void Map(IGridReader gridReader, IDictionary<int, TParent> parents, bool shouldContinueThroughEmptyTables)
+        public override void Map(IGridReader gridReader, IDictionary<TParentKey, TParent> parents, bool shouldContinueThroughEmptyTables)
         {
             base.Map(gridReader, parents, shouldContinueThroughEmptyTables);
-            IDictionary<int, TChild> childDictionary = null;
+            IDictionary<TChildKey, TChild> childDictionary = null;
 
             var children = gridReader.Read<TChild>();
 
             if (children != null)
             {
+                var childrenList = children.ToList();
                 //if we have childrent then put them in a dictionary
-                childDictionary = children.ToDictionary(_childKeySelector);
+                childDictionary = new Dictionary<TChildKey, TChild>(childrenList.Count);
+                foreach (var child in childrenList)
+                {
+                    childDictionary.Add(_childKeySelector(child), child);
+                }
+                
                 MapParents(childDictionary, parents);
             }
 
             //map children with their children
             MapChildren(gridReader, childDictionary, shouldContinueThroughEmptyTables);
+        }
+
+        /// <summary>
+        /// </summary>
+        /// <param name="gridReader"></param>
+        /// <param name="parents"></param>
+        /// <param name="shouldContinueThroughEmptyTables"></param>
+        public override async Task MapAsync(IGridReader gridReader, IDictionary<TParentKey, TParent> parents, bool shouldContinueThroughEmptyTables)
+        {
+            await base.MapAsync(gridReader, parents, shouldContinueThroughEmptyTables);
+            IDictionary<TChildKey, TChild> childDictionary = null;
+
+            var children = await gridReader.ReadAsync<TChild>();
+
+            if (children != null)
+            {
+                var childrenList = children.ToList();
+                //if we have childrent then put them in a dictionary
+                childDictionary = new Dictionary<TChildKey, TChild>(childrenList.Count);
+                foreach (var child in childrenList)
+                {
+                    childDictionary.Add(_childKeySelector(child), child);
+                }
+
+                MapParents(childDictionary, parents);
+            }
+
+            //map children with their children
+            await MapChildrenAsync(gridReader, childDictionary, shouldContinueThroughEmptyTables);
         }
 
         #endregion
@@ -74,11 +119,12 @@ namespace PicnicOrm.Mapping
         /// </summary>
         /// <param name="childDictionary"></param>
         /// <param name="parents"></param>
-        private void MapParents(IDictionary<int, TChild> childDictionary, IDictionary<int, TParent> parents)
+        private void MapParents(IDictionary<TChildKey, TChild> childDictionary, IDictionary<TParentKey, TParent> parents)
         {
             if (parents != null)
             {
                 //group the children by their parents
+                // Optimization: Avoid GroupBy if possible, but for now just optimize dictionary creation
                 var childGrouping = childDictionary.Values.GroupBy(_childParentKeySelector).ToDictionary(grouping => grouping.Key, grouping => grouping.ToList());
 
                 //iterate through each parent and map parent/child relationship
